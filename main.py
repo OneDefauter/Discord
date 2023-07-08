@@ -81,7 +81,7 @@ tree2 = discord.app_commands.CommandTree(client2)
 
 discord_process = None
 main_version = "2.9"
-bot_version = "2.3.0"
+bot_version = discord.__version__
 drive_version = "0.5.0"
 GITHUB_REPO = "https://api.github.com/repos/OneDefauter/Discord"
 drive_is_running = False
@@ -225,6 +225,8 @@ async def on_ready():
 @client1.event
 async def on_connect():
     print('Bot conectado ao servidor Discord\n')
+
+
 
 def registrar_comando(nome_comando, autor, server_id):
     data_hora = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -733,6 +735,7 @@ async def suggest_channel_names(
 ) -> List[app_commands.Choice[str]]:
     channel_names = [
         "┃💬┃chat",
+        "┃💬┃ausente",
         "┃📊┃registro",
         "┃💥┃gringa",
         "┃📜┃gringa",
@@ -749,6 +752,7 @@ async def suggest_channel_names(
         "┃📌┃utilidades",
         "┃📛┃ausência",
         "┃📚┃projetos",
+        "┃🎎┃reunião",
         "┃💲┃folha-de-pagamento"
 
     ]
