@@ -810,7 +810,8 @@ async def tipo_autocomplete(
 ) -> List[app_commands.Choice[str]]:
     choices = [
         app_commands.Choice(name="Pastas adicionadas", value="1"),
-        app_commands.Choice(name="Arquivos processados", value="2")
+        app_commands.Choice(name="Arquivos processados", value="2"),
+        app_commands.Choice(name="Comandos usados", value="3")
     ]
     return [
         choice for choice in choices
@@ -823,7 +824,8 @@ async def modo_autocomplete(
 ) -> List[app_commands.Choice[str]]:
     choices = [
         app_commands.Choice(name="Exportar", value="1"),
-        app_commands.Choice(name="Importar", value="2")
+        app_commands.Choice(name="Importar", value="2"),
+        app_commands.Choice(name="Ler", value="3")
     ]
     return [
         choice for choice in choices
@@ -1133,7 +1135,7 @@ async def helps_autocomplete(
 @app_commands.autocomplete(cor=cores_autocomplete)
 async def slash_command(interaction: discord.Interaction, folder_id: str, comment: str, edit_link: str, project_link: str, raw_link: str = None, canal: discord.TextChannel = None, avatar: str = None, cor: str = None):
     server_id = interaction.guild.id
-    registrar_comando("folder_add", interaction.user.name, server_id)
+    registrar_comando(f"folder_add [{folder_id}]", interaction.user.name, server_id)
 
     # Verificar se o usuário tem a role "Drive" ou é um administrador
     member = interaction.guild.get_member(interaction.user.id)
@@ -1241,7 +1243,7 @@ async def slash_command(interaction: discord.Interaction, folder_id: str, commen
 @app_commands.autocomplete(folder_id=folder_id_autocomplete)
 async def slash_command(interaction: discord.Interaction, folder_id: str):
     server_id = interaction.guild.id
-    registrar_comando("folder_remove", interaction.user.name, server_id)
+    registrar_comando(f"folder_remove [{folder_id}]", interaction.user.name, server_id)
 
     # Verificar se o usuário tem a role "Drive" ou é um administrador
     member = interaction.guild.get_member(interaction.user.id)
@@ -1436,34 +1438,6 @@ async def slash_command(interaction: discord.Integration):
             shutil.rmtree(caminho_completo)
     await interaction.response.send_message("Cache apagado!")
 
-@tree2.command(name="log_comandos", description="mostra todos os comandos usados e por quem")
-async def slash_command(interaction: discord.Interaction):
-    server_id = interaction.guild.id
-    registrar_comando("log_comandos", interaction.user.name, server_id)
-
-    # Verificar se o usuário tem a role "Drive" ou é um administrador
-    member = interaction.guild.get_member(interaction.user.id)
-    is_drive_role = discord.utils.get(member.roles, name='Drive') is not None
-    is_admin = member.guild_permissions.administrator
-
-    if not (is_drive_role or is_admin):
-        await interaction.response.send_message("Você não tem permissão para executar este comando.", ephemeral=True)
-        return
-
-    directory = 'server/log/comandos'
-    file_path = os.path.join(directory, f'{server_id}_comandos.log')
-    if not os.path.exists(file_path):
-        await interaction.response.send_message("O arquivo comandos.log não existe.", ephemeral=True)
-        return
-
-    try:
-        await interaction.response.send_message(file=discord.File(file_path))
-    except discord.Forbidden:
-        await interaction.response.send_message("Você não tem permissão para executar esse comando.", ephemeral=True)
-    except Exception as e:
-        await interaction.response.send_message(f"Ocorreu um erro ao enviar o arquivo config.json: {str(e)}", ephemeral=True)
-    registrar_comando("log_comandos", interaction.user.name, server_id)
-
 # Função para substituir 'null' por None no objeto JSON
 def replace_null_with_none(obj):
     if isinstance(obj, list):
@@ -1558,7 +1532,7 @@ async def slash_command(interaction: discord.Interaction, cor: str):
 @app_commands.autocomplete(tipo=tipo_autocomplete, modo=modo_autocomplete)
 async def slash_command(interaction: discord.Interaction, tipo: int, modo: int):
     server_id = interaction.guild.id
-    registrar_comando("configuracoes", interaction.user.name, server_id)
+    registrar_comando(f"configuracoes", interaction.user.name, server_id)
 
     # Verificar se o usuário tem a role "Drive" ou é um administrador
     member = interaction.guild.get_member(interaction.user.id)
@@ -1572,7 +1546,7 @@ async def slash_command(interaction: discord.Interaction, tipo: int, modo: int):
     await interaction.response.defer(ephemeral=True, thinking=True)
 
     if tipo == 1:
-        if modo == 1:
+        if modo == 1 or 3:
             file_path = dir_inicial.joinpath(server_drive, f'{server_id}_config.json')
             if not os.path.exists(file_path):
                 await interaction.followup.send("O arquivo de configuração para esse servidor não existe.", ephemeral=True)
@@ -1678,7 +1652,7 @@ async def slash_command(interaction: discord.Interaction, tipo: int, modo: int):
             return
 
     if tipo == 2:
-        if modo == 1:
+        if modo == 1 or 3:
             arquivos_procesados_folder = dir_inicial.joinpath(arquivos_procesados)
             file = os.path.join(arquivos_procesados_folder, f"{server_id}_arquivos_processados.txt")
             try:
@@ -1739,6 +1713,26 @@ async def slash_command(interaction: discord.Interaction, tipo: int, modo: int):
                 await interaction.followup.send(f"Ocorreu um erro ao importar o arquivo de configuração: {str(e)}", ephemeral=True)
             return
 
-    await interaction.response.send_message("Erro. Comando digitado incorretamente.", ephemeral=True)
+    if tipo  == 3:
+        if modo == 1:
+            await interaction.followup.send("Você não pode exportar esse arquivo.", ephemeral=True)
+            return
+        if modo == 2:
+            await interaction.followup.send("Você não pode importar nada para esse arquivo.", ephemeral=True)
+            return
+        if modo == 3:
+                file_path = os.path.join(log_comandos, f'{server_id}_comandos.log')
+                print(file_path)
+                if not os.path.exists(file_path):
+                    await interaction.followup.send("O arquivo não existe para este servidor.", ephemeral=True)
+                    return
+                try:
+                    await interaction.followup.send(file=discord.File(file_path), ephemeral=True)
+                    return
+                except Exception as e:
+                    await interaction.followup.send(f"Ocorreu um erro ao enviar o arquivo config.json: {str(e)}", ephemeral=True)
+                    return
+
+    await interaction.followup.send("Erro. Comando digitado incorretamente.", ephemeral=True)
 
 loop.run_forever()
