@@ -3,7 +3,7 @@ import importlib, os, subprocess
 if os.name == 'nt':  # Verifica se o sistema é Windows
     subprocess.check_call(['python.exe -m pip install --upgrade pip'])
 
-biblioteca = ['google','google-auth','google-auth-oauthlib','google-auth-httplib2','httplib2','discord','discord.py','python-dotenv','google-api-python-client','pytz','gallery-dl','psutil','pillow']
+biblioteca = ['requests', 'python-dotenv', 'discord', 'pytz', 'google-auth', 'google-api-python-client', 'google-auth-oauthlib', 'pillow', 'psutil', 'gallery-dl', 'beautifulsoup4']
 
 def verificar_e_instalar_modulo(module_name):
     try:
@@ -30,13 +30,12 @@ limpar_console()
 
 
 
-import json, datetime, re, urllib.request, requests, discord, discord.ext, shutil, asyncio, sys, signal, pytz, platform, io
+import json, datetime, re, urllib.request, requests, discord, discord.ext, shutil, asyncio, sys, pytz, platform, io
 from dotenv import load_dotenv
 from discord.ext import commands
 from discord import app_commands
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
 from urllib.parse import urlencode, urlparse, parse_qs, urlunparse
 from bs4 import BeautifulSoup
 from pathlib import Path
