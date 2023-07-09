@@ -1546,7 +1546,7 @@ async def slash_command(interaction: discord.Interaction, tipo: int, modo: int):
     await interaction.response.defer(ephemeral=True, thinking=True)
 
     if tipo == 1:
-        if modo == 1 or 3:
+        if modo == 1 or modo == 3:
             file_path = dir_inicial.joinpath(server_drive, f'{server_id}_config.json')
             if not os.path.exists(file_path):
                 await interaction.followup.send("O arquivo de configuração para esse servidor não existe.", ephemeral=True)
@@ -1591,11 +1591,12 @@ async def slash_command(interaction: discord.Interaction, tipo: int, modo: int):
                 for pasta_id, pasta in pastas_importadas.items():
                     if isinstance(pasta, dict) and 'comment' in pasta and 'webhook_url' in pasta and 'edit_link' in pasta and 'project_link' in pasta and 'webhook_id' in pasta and 'canal_id' in pasta and 'autor' in pasta and 'criado' in pasta :
                         folder_id = pasta_id
-                
+
                         # Verifica se a pasta já existe nas configurações
                         if folder_id in configuracoes_pastas:
                             await interaction.followup.send(f"A pasta com o ID ***{folder_id}*** já está configurada e foi ignorada.", ephemeral=True)
                         else:
+                            commet = pasta.get('comment')
                             # Verifica se o campo 'raw_link' é 'null' e define como None
                             raw_link = pasta.get('raw_link')
                             if raw_link == 'null':
@@ -1609,6 +1610,36 @@ async def slash_command(interaction: discord.Interaction, tipo: int, modo: int):
                             cor = pasta.get('cor')
                             if cor == 'null':
                                 cor = None
+                            
+                            canal_id = pasta['canal_id']
+                            webhook_id = pasta['webhook_id']
+                
+                            # Verifica se a webhook existe
+                            webhook = None
+                            try:
+                                webhook = await client2.fetch_webhook(webhook_id)
+                            except discord.NotFound:
+                                pass
+                        
+                            # Se a webhook não existir, cria uma nova
+                            if not webhook:
+                                canal = client2.get_channel(canal_id)
+                                if canal:
+                                    webhook = await canal.create_webhook(name=commet)
+
+                                    if avatar:
+                                    # Faz o download da imagem usando a biblioteca requests
+                                        response = requests.get(avatar)
+                                        response.raise_for_status()
+
+                                        # Passa os bytes da imagem para o parâmetro avatar
+                                        await webhook.edit(avatar=response.content)
+
+                            # Verifica se a webhook foi encontrada ou criada com sucesso
+                            if webhook:
+                                # Atualiza o valor da webhook_url e webhook_id
+                                pasta['webhook_url'] = webhook.url
+                                pasta['webhook_id'] = webhook.id
 
                             configuracoes_pastas[folder_id] = {
                                 'comment': pasta['comment'],
@@ -1652,7 +1683,7 @@ async def slash_command(interaction: discord.Interaction, tipo: int, modo: int):
             return
 
     if tipo == 2:
-        if modo == 1 or 3:
+        if modo == 1 or modo == 3:
             arquivos_procesados_folder = dir_inicial.joinpath(arquivos_procesados)
             file = os.path.join(arquivos_procesados_folder, f"{server_id}_arquivos_processados.txt")
             try:

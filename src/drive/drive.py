@@ -7,17 +7,9 @@ from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 from pathlib import Path
 
-print("\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n")
-
 # Configurações do Google Drive API
 SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
 SERVICE_ACCOUNT_FILE = 'credentials.json'  # Arquivo JSON das credenciais do serviço
-
-# Configurações do Discord Webhook
-DISCORD_WEBHOOK_URL = 'https://discord.com/api/webhooks/1003349440997900368/0_Ol3wcUZKyVdBiYbM4cDFM23CjptBHQSSZhNg41JafkMpjX0HhLn2VreoMRIuJgYg8v'  # URL do webhook do Discord
-
-# Arquivo para armazenar os IDs dos arquivos já processados
-ARQUIVOS_PROCESSADOS_FILE = 'arquivos_processados.txt'
 
 # Função para carregar as configurações das pastas a partir do arquivo JSON
 def carregar_configuracoes_pastas():
@@ -31,7 +23,6 @@ def carregar_configuracoes_pastas():
                 config_data = json.load(config_file)
                 pastas_config = config_data.get('pastas', {})
                 configuracoes_pastas[server_id] = pastas_config
-    
     return configuracoes_pastas
 
 # Cria a instância da API do Google Drive
@@ -55,6 +46,82 @@ def verificar_existencia_pasta(pasta_id):
         print(f"Erro ao verificar a existência da pasta '{pasta_id}': \n{str(e)}\n")
         return False  # A pasta não existe ou ocorreu um erro
 
+# Função para carregar os IDs dos arquivos já processados
+def carregar_arquivos_processados(server_id):
+    arquivo_processado_path = dir_inicial.joinpath(arquivos_procesados, f'{server_id}_arquivos_processados.txt')
+    if os.path.exists(arquivo_processado_path):
+        with open(arquivo_processado_path, 'r') as file:
+            arquivos_processados = {line.strip() for line in file}
+    else:
+        arquivos_processados = set()
+    return arquivos_processados
+
+# Função para salvar os IDs dos arquivos já processados
+def salvar_arquivos_processados(arquivos_processados, server_id):
+    arquivo_processado_path = dir_inicial.joinpath(arquivos_procesados, f'{server_id}_arquivos_processados.txt')
+    with open(arquivo_processado_path, 'w') as file:
+        file.write('\n'.join(arquivos_processados))
+
+# Função para enviar mensagem via webhook no Discord
+def enviar_mensagem_discord(name, link, created_time, last_modifying_user, pasta_id, server_id):
+    atual_server_id = server_id
+    for server_id, pastas_config in configuracoes_pastas.items():
+        if server_id == atual_server_id:
+            config = pastas_config.get(pasta_id)
+            if config:
+                webhook_url = config.get('webhook_url', '')
+                edit_link = config.get('edit_link', '')
+                project_link = config.get('project_link', '')
+                raw_link = config.get('raw_link')
+                comment = config.get('comment', '')
+                canal_id = config.get('canal_id', '')
+                avatar = config.get('avatar')
+                last_modifying_user_name = last_modifying_user['displayName']
+                last_modifying_user_photo = last_modifying_user.get('photoLink', '')
+                cor = config.get('cor')
+                if cor is not None and cor.startswith('0x'):
+                    color_value = int(cor, 16)
+                else:
+                    color_value = cor
+
+                raw_text = "**Link da pasta da RAW** (Não tem)" if raw_link is None else "[**Link da pasta da RAW**]({})".format(raw_link)
+
+                print("start---------------------------------------------------------------------------------------------")
+                print(comment)
+                print(edit_link)
+                print(project_link)
+                print(raw_text)
+                print(canal_id)
+                print(avatar)
+                print(link)
+                print(name)
+                print(created_time)
+                print(last_modifying_user_name)
+                print(last_modifying_user_photo)
+                print(cor)
+                print(color_value)
+
+                data = {
+                    "embeds": [
+                        {
+                            "title": f"**{name}**",
+                            "url": link,
+                            "description": f"[**Link direto**]({link})\n[**Link da pasta Editados**]({edit_link})\n[**Link da pasta do projeto**]({project_link})\n{raw_text}",
+                            "timestamp": created_time,
+                            "footer": {
+                                "text": f"Upado por {last_modifying_user['displayName']}",
+                                "icon_url": last_modifying_user.get('photoLink', '')
+                            },
+                            "color": color_value
+                        }
+                    ]
+                }
+
+                response = requests.post(webhook_url, json=data)
+                if response.status_code != 204:
+                    print('Ocorreu um erro ao enviar a mensagem para o Discord.')
+                print("fim-----------------------------------------------------------------------------------------------\n")
+
 # Função para monitorar a pasta no Google Drive
 def monitorar_pasta(pasta_id, server_id):
     arquivos_processados = carregar_arquivos_processados(server_id)
@@ -74,14 +141,13 @@ def monitorar_pasta(pasta_id, server_id):
             arquivos.sort(key=lambda x: x['createdTime'])  # Ordenar a lista de arquivos
         else:
             print(f"A pasta {pasta_id} não existe.\n\n\n")
-
             break
 
         for arquivo in arquivos:
             if arquivo['id'] not in arquivos_processados:
                 # Envia uma mensagem via webhook no Discord
                 time.sleep(1)
-                enviar_mensagem_discord(arquivo['name'], arquivo['webViewLink'], arquivo['createdTime'], arquivo['lastModifyingUser'], pasta_id)
+                enviar_mensagem_discord(arquivo['name'], arquivo['webViewLink'], arquivo['createdTime'], arquivo['lastModifyingUser'], pasta_id, server_id)
 
                 arquivos_processados.add(arquivo['id'])
 
@@ -91,91 +157,15 @@ def monitorar_pasta(pasta_id, server_id):
 
     salvar_arquivos_processados(arquivos_processados, server_id)
 
-# Função para carregar os IDs dos arquivos já processados
-def carregar_arquivos_processados(server_id):
-    arquivo_processado_path = dir_inicial.joinpath(arquivos_procesados, f'{server_id}_arquivos_processados.txt')
-    if os.path.exists(arquivo_processado_path):
-        with open(arquivo_processado_path, 'r') as file:
-            arquivos_processados = {line.strip() for line in file}
-    else:
-        arquivos_processados = set()
-    return arquivos_processados
-
-# Função para salvar os IDs dos arquivos já processados
-def salvar_arquivos_processados(arquivos_processados, server_id):
-    arquivo_processado_path = dir_inicial.joinpath(arquivos_procesados, f'{server_id}_arquivos_processados.txt')
-    with open(arquivo_processado_path, 'w') as file:
-        file.write('\n'.join(arquivos_processados))
-
-# Função para enviar mensagem via webhook no Discord
-def enviar_mensagem_discord(name, link, created_time, last_modifying_user, pasta_id):
-    configuracoes_pastas = carregar_configuracoes_pastas()
-    for server_id, pastas_config in configuracoes_pastas.items():
-        config = pastas_config.get(pasta_id)
-        if config:
-            webhook_url = config.get('webhook_url', '')
-            edit_link = config.get('edit_link', '')
-            project_link = config.get('project_link', '')
-            raw_link = config.get('raw_link')
-            comment = config.get('comment', '')
-            canal_id = config.get('canal_id', '')
-            avatar = config.get('avatar')
-            last_modifying_user_name = last_modifying_user['displayName']
-            last_modifying_user_photo = last_modifying_user.get('photoLink', '')
-            cor = config.get('cor')
-            if cor.startswith("0x"):
-                color_value = int(cor, 16) if cor else None
-            else:
-                color_value = cor
-
-            raw_text = "**Link da pasta da RAW** (Não tem)" if raw_link is None else "[**Link da pasta da RAW**]({})".format(raw_link)
-
-            print("start---------------------------------------------------------------------------------------------")
-            print(comment)
-            print(edit_link)
-            print(project_link)
-            print(raw_text)
-            print(canal_id)
-            print(avatar)
-            print(link)
-            print(name)
-            print(created_time)
-            print(last_modifying_user_name)
-            print(last_modifying_user_photo)
-            print(cor)
-            print(color_value)
-
-            data = {
-                "embeds": [
-                    {
-                        "title": f"**{name}**",
-                        "url": link,
-                        "description": f"[**Link direto**]({link})\n[**Link da pasta Editados**]({edit_link})\n[**Link da pasta do projeto**]({project_link})\n{raw_text}",
-                        "timestamp": created_time,
-                        "footer": {
-                            "text": f"Upado por {last_modifying_user['displayName']}",
-                            "icon_url": last_modifying_user.get('photoLink', '')
-                        },
-                        "color": color_value
-                    }
-                ]
-            }
-
-            response = requests.post(webhook_url, json=data)
-            if response.status_code != 204:
-                print('Ocorreu um erro ao enviar a mensagem para o Discord.')
-            print("fim-----------------------------------------------------------------------------------------------\n")
-
 if __name__ == '__main__':
     while True:
         configuracoes_pastas = carregar_configuracoes_pastas()
         for server_id, pastas_config in configuracoes_pastas.items():
-            print(f"Configurações do servidor {server_id}:\n")
+            print(f"Configurações do servidor {server_id}:")
             pasta_ids = list(pastas_config.keys())  # IDs das pastas que deseja monitorar no Google Drive
             for pasta_id in pasta_ids:
-                monitorar_pasta(pasta_id, server_id)
-                time.sleep(2)  # Aguarda 2 segundos antes de verificar a próxima pasta    # padrão 10 segundos
-
                 # Exibir as configurações da pasta atual
                 print(f"Pasta ID: {pasta_id}")
                 print(f"Configurações: {json.dumps(pastas_config[pasta_id], indent=4)}\n\n\n")
+                monitorar_pasta(pasta_id, server_id)
+                time.sleep(1)  # Aguarda 1 segundos antes de verificar a próxima pasta    # padrão 10 segundos
