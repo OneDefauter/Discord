@@ -79,10 +79,22 @@ tree1 = discord.app_commands.CommandTree(client1)
 client2 = discord.Client(intents=intents)
 tree2 = discord.app_commands.CommandTree(client2)
 
+# Função para obter a versão de um pacote usando o comando "pip show"
+def get_package_version(package_name):
+    try:
+        result = subprocess.check_output(['pip', 'show', package_name]).decode('utf-8')
+        for line in result.split('\n'):
+            if line.startswith('Version:'):
+                return line.split(': ')[1].strip()
+    except subprocess.CalledProcessError:
+        return None
+
 discord_process = None
 main_version = "3.0"
 bot_version = discord.__version__
-drive_version = "0.5.0"
+google_api_core_version = get_package_version('google-api-core')
+google_api_python_client_version = get_package_version('google-api-python-client')
+google_auth_version = get_package_version('google-auth')
 GITHUB_REPO = "https://api.github.com/repos/OneDefauter/Discord"
 drive_is_running = False
 
@@ -890,7 +902,7 @@ async def slash_command(interaction: discord.Interaction):
     embed = discord.Embed(title="Versão", color=discord.Color.green())
     embed.add_field(name="Versão principal", value=f"**v{main_version}** :tada:", inline=False)
     embed.add_field(name="Versão do bot", value=f"**v{bot_version}** :tada:", inline=False)
-    embed.add_field(name="Versão do drive", value=f"**v{drive_version}** :tada:", inline=False)
+    embed.add_field(name="Versão do drive", value=f"**Google API Core: v{google_api_core_version}** :tada:\n**Google API Python Client: v{google_api_python_client_version}** :tada:\n**Google auth: v{google_auth_version}** :tada:", inline=False)
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 @tree1.command(name="runtime", description="tempo de execução")
