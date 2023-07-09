@@ -80,7 +80,7 @@ client2 = discord.Client(intents=intents)
 tree2 = discord.app_commands.CommandTree(client2)
 
 discord_process = None
-main_version = "2.9"
+main_version = "3.0"
 bot_version = discord.__version__
 drive_version = "0.5.0"
 GITHUB_REPO = "https://api.github.com/repos/OneDefauter/Discord"
