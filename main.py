@@ -30,12 +30,13 @@ limpar_console()
 
 
 
-import json, datetime, re, urllib.request, requests, discord, discord.ext, shutil, asyncio, sys, pytz, platform, io
+import json, datetime, re, urllib.request, requests, discord, discord.ext, shutil, asyncio, sys, pytz, platform, io, time
 from dotenv import load_dotenv
 from discord.ext import commands
 from discord import app_commands
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
+from google.oauth2.service_account import Credentials
 from urllib.parse import urlencode, urlparse, parse_qs, urlunparse
 from bs4 import BeautifulSoup
 from pathlib import Path
@@ -88,14 +89,17 @@ def get_package_version(package_name):
     except subprocess.CalledProcessError:
         return None
 
-discord_process = None
-main_version = "3.0"
+monitoramento_ativo = False
+main_version = "3.1"
 bot_version = discord.__version__
 google_api_core_version = get_package_version('google-api-core')
 google_api_python_client_version = get_package_version('google-api-python-client')
 google_auth_version = get_package_version('google-auth')
 GITHUB_REPO = "https://api.github.com/repos/OneDefauter/Discord"
-drive_is_running = False
+
+# Configurações do Google Drive API
+SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
+SERVICE_ACCOUNT_FILE = 'credentials.json'  # Arquivo JSON das credenciais do serviço
 
 update_url = None
 drive_url = None
@@ -107,7 +111,6 @@ latest_version = None
 
 def get_uris():
     global update_url
-    global drive_url
     global main__url
     global upload_arquivo_url
     global upload_files_url
@@ -123,8 +126,6 @@ def get_uris():
     for asset in assets:
         if asset["name"] == "update.py":
             update_url = asset["browser_download_url"]
-        if asset["name"] == "drive.py":
-            drive_url = asset["browser_download_url"]
         if asset["name"] == "main_.py":
             main__url = asset["browser_download_url"]
         if asset["name"] == "upload_arquivo.py":
@@ -135,22 +136,15 @@ def get_uris():
             download_e_up_url = asset["browser_download_url"]
 
 def start_files():
-    drive = dir_inicial.joinpath(src_drive_folder)
     download = dir_inicial.joinpath(src_download_folder)
     
-    if not os.path.exists(drive):
-        os.makedirs(drive)
     if not os.path.exists(download):
         os.makedirs(download)
-    drive_path = os.path.join(drive, 'drive.py')
     main__path = os.path.join(download, 'main_.py')
     upload_arquivo_path = os.path.join(download, 'upload_arquivo.py')
     upload_files_path = os.path.join(download, 'upload_files.py')
     download_e_up_path = os.path.join(download, 'download_e_up.py')
 
-    if not os.path.exists(drive_path):
-        print(drive_path)
-        urllib.request.urlretrieve(drive_url, drive_path)
     if not os.path.exists(main__path):
         print(main__path)
         urllib.request.urlretrieve(main__url, main__path)
@@ -854,6 +848,165 @@ async def modo_autocomplete(
 
 
 
+# Função para carregar as configurações das pastas a partir do arquivo JSON
+def carregar_configuracoes_pastas():
+    configuracoes_pastas2 = {}
+    
+    for file_name in os.listdir(server_drive):
+        if file_name.endswith('_config.json'):
+            server_id = file_name.split('_')[0]
+            file_path = dir_inicial.joinpath(server_drive, file_name)
+            with open(file_path) as config_file:
+                config_data = json.load(config_file)
+                pastas_config = config_data.get('pastas', {})
+                configuracoes_pastas2[server_id] = pastas_config
+    return configuracoes_pastas2
+
+# Cria a instância da API do Google Drive
+credentials = Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+drive_service = build('drive', 'v3', credentials=credentials)
+
+def verificar_existencia_pasta(pasta_id):
+    try:
+        drive_service.files().get(fileId=pasta_id).execute()
+        return True  # A pasta existe
+    except Exception as e:
+        print(f"Erro ao verificar a existência da pasta '{pasta_id}': \n{str(e)}\n")
+        return False  # A pasta não existe ou ocorreu um erro
+
+# Função para carregar os IDs dos arquivos já processados
+def carregar_arquivos_processados(server_id):
+    arquivo_processado_path = dir_inicial.joinpath(arquivos_procesados, f'{server_id}_arquivos_processados.txt')
+    if os.path.exists(arquivo_processado_path):
+        with open(arquivo_processado_path, 'r') as file:
+            arquivos_processados = {line.strip() for line in file}
+    else:
+        arquivos_processados = set()
+    return arquivos_processados
+
+# Função para salvar os IDs dos arquivos já processados
+def salvar_arquivos_processados(arquivos_processados, server_id):
+    arquivo_processado_path = dir_inicial.joinpath(arquivos_procesados, f'{server_id}_arquivos_processados.txt')
+    with open(arquivo_processado_path, 'w') as file:
+        file.write('\n'.join(arquivos_processados))
+
+# Função para enviar mensagem via webhook no Discord
+def enviar_mensagem_discord(name, link, created_time, last_modifying_user, pasta_id, server_id, configuracoes_pastas2):
+    atual_server_id = server_id
+    for server_id, pastas_config in configuracoes_pastas2.items():
+        if server_id == atual_server_id:
+            config = pastas_config.get(pasta_id)
+            if config:
+                webhook_url = config.get('webhook_url', '')
+                edit_link = config.get('edit_link', '')
+                project_link = config.get('project_link', '')
+                raw_link = config.get('raw_link')
+                comment = config.get('comment', '')
+                canal_id = config.get('canal_id', '')
+                avatar = config.get('avatar')
+                last_modifying_user_name = last_modifying_user['displayName']
+                last_modifying_user_photo = last_modifying_user.get('photoLink', '')
+                cor = config.get('cor')
+                if cor is not None and cor.startswith('0x'):
+                    color_value = int(cor, 16)
+                else:
+                    color_value = cor
+
+                raw_text = "**Link da pasta da RAW** (Não tem)" if raw_link is None else "[**Link da pasta da RAW**]({})".format(raw_link)
+
+                print("start---------------------------------------------------------------------------------------------")
+                print(comment)
+                print(edit_link)
+                print(project_link)
+                print(raw_text)
+                print(canal_id)
+                print(avatar)
+                print(link)
+                print(name)
+                print(created_time)
+                print(last_modifying_user_name)
+                print(last_modifying_user_photo)
+                print(cor)
+                print(color_value)
+
+                data = {
+                    "embeds": [
+                        {
+                            "title": f"**{name}**",
+                            "url": link,
+                            "description": f"[**Link direto**]({link})\n[**Link da pasta Editados**]({edit_link})\n[**Link da pasta do projeto**]({project_link})\n{raw_text}",
+                            "timestamp": created_time,
+                            "footer": {
+                                "text": f"Upado por {last_modifying_user['displayName']}",
+                                "icon_url": last_modifying_user.get('photoLink', '')
+                            },
+                            "color": color_value
+                        }
+                    ]
+                }
+
+                response = requests.post(webhook_url, json=data)
+                if response.status_code != 204:
+                    print('Ocorreu um erro ao enviar a mensagem para o Discord.')
+                print("fim-----------------------------------------------------------------------------------------------\n")
+
+# Função para monitorar a pasta no Google Drive
+def monitorar_pasta(pasta_id, server_id, configuracoes_pastas2):
+    arquivos_processados = carregar_arquivos_processados(server_id)
+    arquivos = []  # Definir uma lista vazia por padrão
+
+    page_token = None
+    while True:
+        if verificar_existencia_pasta(pasta_id):
+            response = drive_service.files().list(
+                q=f"'{pasta_id}' in parents and (mimeType='application/vnd.google-apps.folder' or fileExtension='zip' or fileExtension='rar')",
+                spaces='drive',
+                fields='nextPageToken, files(id, name, createdTime, lastModifyingUser, webViewLink)',
+                orderBy='createdTime',  # Ordenar pelos mais antigos primeiro
+                pageToken=page_token
+            ).execute()
+            arquivos = response.get('files', [])
+            arquivos.sort(key=lambda x: x['createdTime'])  # Ordenar a lista de arquivos
+        else:
+            print(f"A pasta {pasta_id} não existe.\n\n\n")
+            break
+
+        for arquivo in arquivos:
+            if arquivo['id'] not in arquivos_processados:
+                # Envia uma mensagem via webhook no Discord
+                time.sleep(1)
+                enviar_mensagem_discord(arquivo['name'], arquivo['webViewLink'], arquivo['createdTime'], arquivo['lastModifyingUser'], pasta_id, server_id, configuracoes_pastas2)
+
+                arquivos_processados.add(arquivo['id'])
+
+        page_token = response.get('nextPageToken')
+        if not page_token:
+            break  # Sai do loop quando não há mais páginas de resultados
+
+    salvar_arquivos_processados(arquivos_processados, server_id)
+
+async def executar_monitoramento():
+    global monitoramento_ativo
+    
+    while True:
+        if not monitoramento_ativo:
+            break  # Interrompe o loop se o monitoramento estiver desligado
+        
+        configuracoes_pastas = carregar_configuracoes_pastas()
+        for server_id, pastas_config in configuracoes_pastas.items():
+            print(f"Configurações do servidor {server_id}:")
+            pasta_ids = list(pastas_config.keys())  # IDs das pastas que deseja monitorar no Google Drive
+            for pasta_id in pasta_ids:
+                if not monitoramento_ativo:
+                    break  # Interrompe o loop se o monitoramento estiver desligado
+
+                # Exibir as configurações da pasta atual
+                print(f"Pasta ID: {pasta_id}")
+                print(f"Configurações: {json.dumps(pastas_config[pasta_id], indent=4)}\n\n\n")
+                monitorar_pasta(pasta_id, server_id, configuracoes_pastas)
+                await asyncio.sleep(1)  # Aguardar 1 segundo antes de verificar a próxima pasta    # padrão 10 segundos
+
+        await asyncio.sleep(1)  # Aguardar 1 segundo antes de verificar a próxima pasta    # padrão 10 segundos
 
 
 
@@ -951,27 +1104,23 @@ async def update(interaction: discord.Interaction, update: str = None):
     if update == "False":
         try:
             if not latest_version.startswith("v"):
-                await interaction.response.send_message("A última latest não foi configurada corretamente.")
+                await interaction.response.send_message("A última latest não foi configurada corretamente.", ephemeral=True)
                 return
-
-            latest_version = latest_version.replace("v", "")
             
-            if latest_version == main_version:
-                await interaction.response.send_message(f"O bot está atualizado.\nVersão atual: {main_version}", ephemeral=True)
+            if latest_version == f"v{main_version}":
+                await interaction.response.send_message(f"O bot está atualizado.\nVersão atual: v{main_version}", ephemeral=True)
             else:
-                await interaction.response.send_message(f"O bot está desatualizado.\nVersão atual: {main_version}\nVersão nova: {latest_version}", ephemeral=True)
+                await interaction.response.send_message(f"O bot está desatualizado.\nVersão atual: v{main_version}\nVersão nova: {latest_version}", ephemeral=True)
         except Exception as e:
             await interaction.response.send_message(f"Ocorreu um erro ao verificar a atualização: {str(e)}", ephemeral=True)
     
     if update == "True":
         try:
             if not latest_version.startswith("v"):
-                await interaction.response.send_message("A última latest não foi configurada corretamente.")
+                await interaction.response.send_message("A última latest não foi configurada corretamente.", ephemeral=True)
                 return
-
-            latest_version = latest_version.replace("v", "")
             
-            if not latest_version == main_version:
+            if not latest_version == f"v{main_version}":
                 if os.path.exists("update.py"):
                     os.remove("update.py")
                 urllib.request.urlretrieve(update_url, "update.py")
@@ -985,9 +1134,9 @@ async def update(interaction: discord.Interaction, update: str = None):
                 subprocess.Popen([f"{python_type}", "update.py"])
 
             else:
-                await interaction.response.send_message(f"O bot já está atualizado.\nVersão atual: {main_version}", ephemeral=False)
+                await interaction.response.send_message(f"O bot já está atualizado.\nVersão atual: v{main_version}", ephemeral=True)
         except Exception as e:
-            await interaction.response.send_message(f"Ocorreu um erro ao verificar a atualização: {str(e)}", ephemeral=False)
+            await interaction.response.send_message(f"Ocorreu um erro ao verificar a atualização: {str(e)}", ephemeral=True)
 
 @update.autocomplete('update')
 async def update_autocomplete(
@@ -1318,32 +1467,15 @@ async def slash_command(interaction: discord.Interaction):
         await interaction.response.send_message("Você não tem permissão para executar este comando.", ephemeral=True)
         return
     
-    global discord_process
-    global drive_is_running
+    global monitoramento_ativo
     
-    if discord_process is None:
-        await interaction.response.send_message("Iniciando a verificação de pastas...", ephemeral=True)
-        try:
-            drive = dir_inicial.joinpath(src_drive_folder)
-            drive_path = os.path.join(drive, 'drive.py')
-            # Inicia o processo do drive.py
-            discord_process = subprocess.Popen([f"{python_type}", drive_path])
-        except Exception as e:
-            await interaction.followup.send(f"Ocorreu um erro ao iniciar o drive.py: {str(e)}", ephemeral=True)
-            discord_process = None
-        else:
-            drive_is_running = True
-            await client2.change_presence(activity=discord.Game(name="Drive: Ligado"))
-            await interaction.followup.send("O drive.py foi iniciado com sucesso.", ephemeral=True)
+    if monitoramento_ativo:
+        await interaction.response.send_message("A verificação de pastas foi parada com sucesso.", ephemeral=True)
+        monitoramento_ativo = False  # Desligar o monitoramento
     else:
-        await interaction.response.send_message("Parando a verificação de pastas...", ephemeral=True)
-        # Finaliza o processo do Discord.py
-        discord_process.terminate()
-        discord_process.wait()
-        discord_process = None
-        drive_is_running = False
-        await client2.change_presence(activity=discord.Game(name="Drive: Desligado"))
-        await interaction.followup.send("A verificação de pastas foi parada com sucesso.", ephemeral=True)
+        monitoramento_ativo = True  # Ligado o monitoramento
+        await interaction.response.send_message("A verificação de pastas foi iniciada com sucesso.", ephemeral=True)
+        asyncio.create_task(executar_monitoramento())  # Iniciar o loop de verificação
 
 @tree2.command(name="folder_list", description="lista de pastas adicionadas")
 async def slash_command(interaction: discord.Interaction):
@@ -1543,7 +1675,7 @@ async def slash_command(interaction: discord.Interaction, cor: str):
 @app_commands.autocomplete(tipo=tipo_autocomplete, modo=modo_autocomplete)
 async def slash_command(interaction: discord.Interaction, tipo: int, modo: int):
     server_id = interaction.guild.id
-    registrar_comando(f"configuracoes", interaction.user.name, server_id)
+    registrar_comando(f"configuracoes {tipo} {modo}", interaction.user.name, server_id)
 
     # Verificar se o usuário tem a role "Drive" ou é um administrador
     member = interaction.guild.get_member(interaction.user.id)
