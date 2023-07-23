@@ -1,39 +1,7 @@
-import importlib, os, subprocess
-
-if os.name == 'nt':  # Verifica se o sistema é Windows
-    subprocess.check_call(['python.exe -m pip install --upgrade pip'])
-
-biblioteca = ['requests', 'python-dotenv', 'discord', 'pytz', 'google-auth', 'google-api-python-client', 'google-auth-oauthlib', 'pillow', 'psutil', 'gallery-dl', 'beautifulsoup4']
-
-def verificar_e_instalar_modulo(module_name):
-    try:
-        importlib.import_module(module_name)
-        print(f"O módulo {module_name} já está instalado.\n")
-    except ImportError:
-        print(f"O módulo {module_name} não está instalado. Instalando...")
-        subprocess.check_call(['pip', 'install', module_name])
-        print(f"O módulo {module_name} foi instalado com sucesso.\n")
-
-# Exemplo de uso
-for a in biblioteca:
-    verificar_e_instalar_modulo(a)
-
-def limpar_console():
-    if os.name == 'nt':  # Verifica se o sistema é Windows
-        os.system('cls')  # Comando para limpar o console no Windows
-    else:
-        os.system('clear')  # Comando para limpar o console em sistemas Unix-like
-
-limpar_console()
-
-
-
-
-
-import json, datetime, re, urllib.request, requests, discord, discord.ext, shutil, asyncio, sys, pytz, platform, io, time
+import json, re, datetime, urllib.request, requests, discord, shutil, asyncio, sys, pytz, platform, io, time, os, subprocess, aiohttp, traceback
 from dotenv import load_dotenv
+from discord import app_commands, Webhook, Interaction
 from discord.ext import commands
-from discord import app_commands
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from google.oauth2.service_account import Credentials
@@ -42,6 +10,15 @@ from bs4 import BeautifulSoup
 from pathlib import Path
 from typing import List
 from PIL import Image
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+
+if os.name == 'nt':  # Verifica se o sistema é Windows
+    os.system('cls')  # Comando para limpar o console no Windows
+else:
+    os.system('clear')  # Comando para limpar o console em sistemas Unix-like
 
 start_time = datetime.datetime.now()
 
@@ -53,6 +30,8 @@ if platform.system() == 'Windows':
     src_drive_folder = 'src\\drive'
     log_download = 'server\\log\\download'
     log_comandos = 'server\\log\\comandos'
+    server_posts = 'server\\posts'
+    server_roles = 'server\\roles'
 else:
     server_drive = 'server/drive'
     arquivos_procesados = 'server/log/arquivos_processados'
@@ -61,6 +40,8 @@ else:
     src_drive_folder = 'src/drive'
     log_download = 'server/log/download'
     log_comandos = 'server/log/comandos'
+    server_posts = 'server/posts'
+    server_roles = 'server/roles'
 
 dir_inicial = Path(os.getcwd())
 
@@ -90,7 +71,7 @@ def get_package_version(package_name):
         return None
 
 monitoramento_ativo = False
-main_version = "3.1"
+main_version = "3.2"
 bot_version = discord.__version__
 google_api_core_version = get_package_version('google-api-core')
 google_api_python_client_version = get_package_version('google-api-python-client')
@@ -163,6 +144,7 @@ def start_folders():
     arquivos_procesados_folder = dir_inicial.joinpath(arquivos_procesados)
     log_download_folder = dir_inicial.joinpath(log_download)
     log_comandos_folder = dir_inicial.joinpath(log_comandos)
+    posts_server_folder = dir_inicial.joinpath(server_posts)
     if not os.path.exists(drive_folder):
         os.makedirs(drive_folder)
     if not os.path.exists(arquivos_procesados_folder):
@@ -171,12 +153,17 @@ def start_folders():
         os.makedirs(log_download_folder)
     if not os.path.exists(log_comandos_folder):
         os.makedirs(log_comandos_folder)
+    if not os.path.exists(posts_server_folder):
+        os.makedirs(posts_server_folder)
 
- 
 get_uris()
 start_files()
 start_folders()
 
+def encode_json(obj):
+    if isinstance(obj, str):
+        return obj.encode('utf-8').decode('unicode-escape')
+    return obj
 
 loop = asyncio.new_event_loop()
 asyncio.set_event_loop(loop)
@@ -186,6 +173,7 @@ bot2 = loop.create_task(client2.start(bot_token2, reconnect = True))
 @client1.event
 async def on_ready():
     await client1.change_presence(status=discord.Status.online)
+    await client1.change_presence(activity=discord.Game(name=f"Versão: {main_version}"))
     print('-------------------------------------------')
     print('Main')
     print(f'Bot conectado como {client1.user.name}')
@@ -194,6 +182,7 @@ async def on_ready():
     print("Online: ✅")
     print('-------------------------------------------\n')
     await tree1.sync()
+
     if os.path.exists("last_channel.txt"):
         with open("last_channel.txt", "r") as file:
             lines = file.readlines()
@@ -207,7 +196,7 @@ async def on_ready():
             channel = guild.get_channel(int(channel_id))
         
             if channel:
-                await channel.send("O bot foi atualizado.")
+                await channel.send(f"O bot foi atualizado.\nVersão atual: {main_version}")
                 os.remove("last_channel.txt")
             else:
                 print("Canal não encontrado.")
@@ -227,10 +216,43 @@ async def on_ready():
     print('-------------------------------------------\n')
     await tree2.sync()
 
+    if os.path.exists("last_channel.txt"):
+        with open("last_channel.txt", "r") as file:
+            lines = file.readlines()
+            if len(lines) >= 2:
+                server_id = lines[0].strip().split(":")[-1].strip()
+                channel_id = lines[1].strip().split(":")[-1].strip()
+
+        if server_id and channel_id:
+            # Enviar uma mensagem no canal especificado
+            guild = client2.get_guild(int(server_id))
+            channel = guild.get_channel(int(channel_id))
+        
+            if channel:
+                await channel.send(f"O bot foi atualizado.\nVersão atual: {main_version}")
+                os.remove("last_channel.txt")
+            else:
+                print("Canal não encontrado.")
+        else:
+            print("ID do servidor e/ou ID do canal não encontrados.")
+
 @client1.event
 async def on_connect():
     print('Bot conectado ao servidor Discord\n')
 
+
+# Configurar o caminho para o driver do Chrome
+webdriver_service = Service('chromedriver', log_path='src/null')
+
+# Configurar as opções do Chrome para executar em modo headless
+chrome_options = Options()
+chrome_options.add_argument("--headless")  # Executar em modo headless
+chrome_options.add_argument("--no-sandbox")
+chrome_options.add_argument("--disable-dev-shm-usage")
+chrome_options.add_argument("--log-level=3")  # Suprimir mensagens de log
+
+# Inicializar o driver do Chrome com as opções
+selenium_driver = webdriver.Chrome(service=webdriver_service, options=chrome_options)
 
 
 def registrar_comando(nome_comando, autor, server_id):
@@ -275,8 +297,8 @@ def carregar_configuracoes(server_id):
 # Salva as configurações no arquivo config.json
 def salvar_configuracoes(configuracoes, server_id):
     file_path = dir_inicial.joinpath(server_drive, f'{server_id}_config.json')
-    with open(file_path, 'w') as config_file:
-        json.dump({'pastas': configuracoes}, config_file, indent=4)
+    with open(file_path, 'w', encoding='utf-8') as config_file:
+        json.dump({'pastas': configuracoes}, config_file, indent=4, ensure_ascii=False)
 
 async def verificar_link_e_baixar(interaction, link, link_sem_parametros):
     # Verificar se o link é permitido
@@ -304,9 +326,9 @@ async def verificar_link_e_baixar(interaction, link, link_sem_parametros):
         # Autenticação
         scopes = ['https://www.googleapis.com/auth/drive']
         credentials = service_account.Credentials.from_service_account_file('credentials.json', scopes=scopes)
-        drive_service = build('drive', 'v3', credentials=credentials)
+        drive_service1 = build('drive', 'v3', credentials=credentials)
 
-        lista_pasta = drive_service.files().list(
+        lista_pasta = drive_service1.files().list(
             q=f"name='{pasta_link}' and parents='1af9Dg2ugnacDtj17gnTGhn-yi8Z9tuLc' and mimeType='application/vnd.google-apps.folder'",
             fields='files(id)'
         ).execute()
@@ -316,7 +338,7 @@ async def verificar_link_e_baixar(interaction, link, link_sem_parametros):
             print(f'A pasta {pasta_link} já existe. Utilizando a pasta existente.')
         else:
             # Cria uma nova pasta no Google Drive
-            nova_pasta = drive_service.files().create(
+            nova_pasta = drive_service1.files().create(
                 body={'name': pasta_link, 'parents': ['1af9Dg2ugnacDtj17gnTGhn-yi8Z9tuLc'], 'mimeType': 'application/vnd.google-apps.folder'}
             ).execute()
             nova_pasta_id = nova_pasta['id']
@@ -837,6 +859,148 @@ async def modo_autocomplete(
         if current.lower() in choice.name.lower()
     ]
 
+# Função para substituir 'null' por None no objeto JSON
+def replace_null_with_none(obj):
+    if isinstance(obj, list):
+        return [replace_null_with_none(item) for item in obj]
+    elif isinstance(obj, dict):
+        return {key: replace_null_with_none(value) for key, value in obj.items()}
+    elif obj == 'null':
+        return None
+    else:
+        return obj
+
+def cpx01(server_id):
+    file_path = dir_inicial.joinpath(server_posts, f'{server_id}_posts.json')
+
+    if os.path.exists(file_path):
+        with open(file_path) as config_file:
+            config_data = json.load(config_file)
+            return config_data
+    else:
+        return {}
+
+def cpx02(configuracoes, server_id):
+    file_path = dir_inicial.joinpath(server_posts, f'{server_id}_posts.json')
+    with open(file_path, 'w') as config_file:
+        json.dump(configuracoes, config_file, indent=4)
+
+def cpx03(server_id):
+    file_path = dir_inicial.joinpath(server_posts, f'{server_id}_hooks.json')
+
+    if os.path.exists(file_path):
+        with open(file_path) as config_file:
+            config_data = json.load(config_file)
+            return config_data
+    else:
+        return {}
+
+def cpx05(server_id):
+    file_path = dir_inicial.joinpath(server_posts, f'{server_id}_hooks_password.json')
+
+    if os.path.exists(file_path):
+        with open(file_path) as config_file:
+            config_data = json.load(config_file)
+            return config_data
+    else:
+        return {}
+
+def cpx04(configuracoes, server_id):
+    file_path = dir_inicial.joinpath(server_posts, f'{server_id}_hooks.json')
+    with open(file_path, 'w') as config_file:
+        json.dump(configuracoes, config_file, indent=4)
+
+def cpx06(configuracoes, server_id):
+    file_path = dir_inicial.joinpath(server_posts, f'{server_id}_hooks_password.json')
+    with open(file_path, 'w') as config_file:
+        json.dump(configuracoes, config_file, indent=4)
+
+async def name_autocomplete(
+    interaction: discord.Interaction,
+    current: str,
+) -> List[app_commands.Choice[str]]:
+    server_id = interaction.guild.id
+    configuracoes_pastas = cpx01(server_id)
+    choices = []
+    for name, config in configuracoes_pastas.items():
+        if current.lower() in name.lower() or current.lower() in name.lower():
+            name = name
+            choice = app_commands.Choice(name=name, value=name)
+            choices.append(choice)
+    return choices
+
+async def link_autocomplete(
+    interaction: discord.Interaction,
+    current: str,
+) -> List[app_commands.Choice[str]]:
+    server_id = interaction.guild.id
+    configuracoes_pastas = cpx03(server_id)
+    choices = []
+    for name, config in configuracoes_pastas.items():
+        if current.lower() in name.lower() or current.lower() in name.lower():
+            name = name
+            choice = app_commands.Choice(name=name, value=name)
+            choices.append(choice)
+    return choices
+
+async def role_autocomplete(
+    interaction: Interaction,
+    current: str,
+) -> List[app_commands.Choice[str]]:
+    server = interaction.guild
+    roles = server.roles
+    choices = []
+    for role in roles:
+        if current.lower() in role.name.lower() or current.lower() in str(role.id):
+            choice = app_commands.Choice(name=role.name, value=str(role.id))
+            choices.append(choice)
+    return choices
+
+
+
+
+
+
+
+
+def selenium(link_obra, numero):
+    try:
+        # Navegar para a página desejada
+        selenium_driver.get(link_obra)
+        selenium_driver.implicitly_wait(30)  # segundos
+
+        # Esperar até que o elemento desejado esteja presente na página
+        capitulos_element = selenium_driver.find_element(By.CSS_SELECTOR, "div.obra-capitulos")
+
+        # Obter os links dos capítulos
+        capitulos = capitulos_element.find_elements(By.CSS_SELECTOR, "a.capitulo")
+
+        # Obter o elemento da imagem
+        capitulos_icon_element = selenium_driver.find_element(By.CSS_SELECTOR, "img.obra-img")
+
+        # Obter a URL da imagem
+        icon_url = capitulos_icon_element.get_attribute("src")
+
+        for capitulo in capitulos:
+            link = capitulo.get_attribute("href")
+            nome = capitulo.find_element(By.TAG_NAME, "p").text
+            print(f"{nome} - {numero} - {link}")
+            nome = nome.replace("Capítulo ", "")
+            nome = nome.lstrip("0")
+            if nome == f"{numero}":
+                print(f"{nome} - {link}")
+                return nome, link, icon_url
+            
+    except TimeoutError:
+        print('Tempo acabou')
+        return False, False, False
+    except Exception as e:
+        print (f'Um erro ocorreu:\n{e}')
+        return False, False, False
+
+    return False, False, False
+
+
 
 
 
@@ -896,59 +1060,61 @@ def enviar_mensagem_discord(name, link, created_time, last_modifying_user, pasta
     for server_id, pastas_config in configuracoes_pastas2.items():
         if server_id == atual_server_id:
             config = pastas_config.get(pasta_id)
-            if config:
-                webhook_url = config.get('webhook_url', '')
-                edit_link = config.get('edit_link', '')
-                project_link = config.get('project_link', '')
-                raw_link = config.get('raw_link')
-                comment = config.get('comment', '')
-                canal_id = config.get('canal_id', '')
-                avatar = config.get('avatar')
-                last_modifying_user_name = last_modifying_user['displayName']
-                last_modifying_user_photo = last_modifying_user.get('photoLink', '')
-                cor = config.get('cor')
-                if cor is not None and cor.startswith('0x'):
-                    color_value = int(cor, 16)
-                else:
-                    color_value = cor
-
-                raw_text = "**Link da pasta da RAW** (Não tem)" if raw_link is None else "[**Link da pasta da RAW**]({})".format(raw_link)
-
-                print("start---------------------------------------------------------------------------------------------")
-                print(comment)
-                print(edit_link)
-                print(project_link)
-                print(raw_text)
-                print(canal_id)
-                print(avatar)
-                print(link)
-                print(name)
-                print(created_time)
-                print(last_modifying_user_name)
-                print(last_modifying_user_photo)
-                print(cor)
-                print(color_value)
-
-                data = {
-                    "embeds": [
-                        {
-                            "title": f"**{name}**",
-                            "url": link,
-                            "description": f"[**Link direto**]({link})\n[**Link da pasta Editados**]({edit_link})\n[**Link da pasta do projeto**]({project_link})\n{raw_text}",
-                            "timestamp": created_time,
-                            "footer": {
-                                "text": f"Upado por {last_modifying_user['displayName']}",
-                                "icon_url": last_modifying_user.get('photoLink', '')
-                            },
-                            "color": color_value
-                        }
-                    ]
-                }
-
-                response = requests.post(webhook_url, json=data)
-                if response.status_code != 204:
-                    print('Ocorreu um erro ao enviar a mensagem para o Discord.')
-                print("fim-----------------------------------------------------------------------------------------------\n")
+            if any(char.isdigit() for char in name):
+                if config:
+                    webhook_url = config.get('webhook_url', '')
+                    edit_link = config.get('edit_link', '')
+                    project_link = config.get('project_link', '')
+                    raw_link = config.get('raw_link')
+                    comment = config.get('comment', '')
+                    canal_id = config.get('canal_id', '')
+                    avatar = config.get('avatar')
+                    last_modifying_user_name = last_modifying_user['displayName']
+                    last_modifying_user_photo = last_modifying_user.get('photoLink', '')
+                    cor = config.get('cor')
+                    if cor is not None and cor.startswith('0x'):
+                        color_value = int(cor, 16)
+                    else:
+                        color_value = cor
+    
+                    raw_text = "**Link da pasta da RAW** (Não tem)" if raw_link is None else "[**Link da pasta da RAW**]({})".format(raw_link)
+    
+                    print("start---------------------------------------------------------------------------------------------")
+                    print(comment)
+                    print(edit_link)
+                    print(project_link)
+                    print(raw_text)
+                    print(canal_id)
+                    print(avatar)
+                    print(link)
+                    print(name)
+                    print(created_time)
+                    print(last_modifying_user_name)
+                    print(last_modifying_user_photo)
+                    print(cor)
+                    print(color_value)
+    
+                    data = {
+                        "embeds": [
+                            {
+                                "title": f"**{name}**",
+                                "url": link,
+                                "description": f"[**Link direto**]({link})\n[**Link da pasta Editados**]({edit_link})\n[**Link da pasta do projeto**]({project_link})\n{raw_text}",
+                                "timestamp": created_time,
+                                "footer": {
+                                    "text": f"Upado por {last_modifying_user['displayName']}",
+                                    "icon_url": last_modifying_user.get('photoLink', '')
+                                },
+                                "color": color_value
+                            }
+                        ]
+                    }
+    
+                    response = requests.post(webhook_url, json=data)
+                    if response.status_code != 204:
+                        print('Ocorreu um erro ao enviar a mensagem para o Discord.')
+                    print("fim-----------------------------------------------------------------------------------------------\n")
+            
 
 # Função para monitorar a pasta no Google Drive
 def monitorar_pasta(pasta_id, server_id, configuracoes_pastas2):
@@ -1470,10 +1636,12 @@ async def slash_command(interaction: discord.Interaction):
     global monitoramento_ativo
     
     if monitoramento_ativo:
+        await client2.change_presence(activity=discord.Game(name="Drive: Desligado"))
         await interaction.response.send_message("A verificação de pastas foi parada com sucesso.", ephemeral=True)
         monitoramento_ativo = False  # Desligar o monitoramento
     else:
         monitoramento_ativo = True  # Ligado o monitoramento
+        await client2.change_presence(activity=discord.Game(name="Drive: Ligado"))
         await interaction.response.send_message("A verificação de pastas foi iniciada com sucesso.", ephemeral=True)
         asyncio.create_task(executar_monitoramento())  # Iniciar o loop de verificação
 
@@ -1581,17 +1749,6 @@ async def slash_command(interaction: discord.Integration):
             shutil.rmtree(caminho_completo)
     await interaction.response.send_message("Cache apagado!")
 
-# Função para substituir 'null' por None no objeto JSON
-def replace_null_with_none(obj):
-    if isinstance(obj, list):
-        return [replace_null_with_none(item) for item in obj]
-    elif isinstance(obj, dict):
-        return {key: replace_null_with_none(value) for key, value in obj.items()}
-    elif obj == 'null':
-        return None
-    else:
-        return obj
-
 @tree2.command(name="criar", description="cria uma categoria e vários canais nela")
 @app_commands.autocomplete(canal1=suggest_channel_names, canal2=suggest_channel_names, canal3=suggest_channel_names, canal4=suggest_channel_names, canal5=suggest_channel_names, canal6=suggest_channel_names, canal7=suggest_channel_names, canal8=suggest_channel_names, canal9=suggest_channel_names, canal10=suggest_channel_names, canal11=suggest_channel_names, canal12=suggest_channel_names, canal13=suggest_channel_names, canal14=suggest_channel_names, canal15=suggest_channel_names, canal16=suggest_channel_names, canal17=suggest_channel_names, canal18=suggest_channel_names, canal19=suggest_channel_names, canal20=suggest_channel_names)
 async def suggest_channel_names(interaction: discord.Interaction, nome: str, canal1: str, canal2: str = None, canal3: str = None, canal4: str = None, canal5: str = None, canal6: str = None, canal7: str = None, canal8: str = None, canal9: str = None, canal10: str = None, canal11: str = None, canal12: str = None, canal13: str = None, canal14: str = None, canal15: str = None, canal16: str = None, canal17: str = None, canal18: str = None, canal19: str = None, canal20: str = None):
@@ -1672,8 +1829,21 @@ async def slash_command(interaction: discord.Interaction, cor: str):
     os.remove(temp_filename)
 
 @tree2.command(name="configuracoes", description="configurações para pastas")
-@app_commands.autocomplete(tipo=tipo_autocomplete, modo=modo_autocomplete)
-async def slash_command(interaction: discord.Interaction, tipo: int, modo: int):
+@app_commands.choices(visivel=[
+                            app_commands.Choice(name='Sim', value=1),
+                            app_commands.Choice(name='Não', value=2)],
+                      tipo=[
+                            app_commands.Choice(name='Pastas adicionadas', value=1),
+                            app_commands.Choice(name='Arquivos processados', value=2),
+                            app_commands.Choice(name='Comandos usados', value=3)
+                      ],
+                      modo=[
+                            app_commands.Choice(name='Exportar', value=1),
+                            app_commands.Choice(name='Importar', value=1),
+                            app_commands.Choice(name='Ler', value=1)
+                      ])
+@app_commands.describe(visivel='Mostra a mensagem para todos ou só você')
+async def slash_command(interaction: discord.Interaction, tipo: app_commands.Choice[int], modo: app_commands.Choice[int], visivel: app_commands.Choice[int]):
     server_id = interaction.guild.id
     registrar_comando(f"configuracoes {tipo} {modo}", interaction.user.name, server_id)
 
@@ -1683,24 +1853,26 @@ async def slash_command(interaction: discord.Interaction, tipo: int, modo: int):
     is_admin = member.guild_permissions.administrator
 
     if not (is_drive_role or is_admin):
-        await interaction.response.send_message("Você não tem permissão para executar este comando.", ephemeral=True)
-        return
+        return await interaction.response.send_message("Você não tem permissão para executar este comando.", ephemeral=True)
+    
+    # await interaction.response.defer(ephemeral=True, thinking=True)
 
-    await interaction.response.defer(ephemeral=True, thinking=True)
-
-    if tipo == 1:
-        if modo == 1 or modo == 3:
+    if tipo.value == 1:
+        if modo.value == 1 or modo.value == 3:
             file_path = dir_inicial.joinpath(server_drive, f'{server_id}_config.json')
             if not os.path.exists(file_path):
-                await interaction.followup.send("O arquivo de configuração para esse servidor não existe.", ephemeral=True)
-                return
+                return await interaction.response.send_message("O arquivo de configuração para esse servidor não existe.", ephemeral=True)
 
             try:
-                await interaction.followup.send(file=discord.File(file_path), ephemeral=True)
+                if visivel.value == 2:
+                    await interaction.response.send_message(file=discord.File(file_path), ephemeral=True)
+                if visivel.value == 1:
+                    print('aqui')
+                    await interaction.response.send_message(file=discord.File(file_path), ephemeral=False)
             except Exception as e:
-                await interaction.followup.send(f"Ocorreu um erro ao enviar o arquivo config.json: {str(e)}", ephemeral=True)
+                await interaction.response.send_message(f"Ocorreu um erro ao enviar o arquivo config.json: {str(e)}", ephemeral=True)
             return
-        if modo == 2:
+        if modo.value == 2:
             await interaction.followup.send("Por favor, envie o arquivo de configuração para importar dentro de 1 minuto.", ephemeral=True)
             try:
                 # Espera por 1 minuto para o arquivo ser enviado
@@ -1825,8 +1997,8 @@ async def slash_command(interaction: discord.Interaction, tipo: int, modo: int):
                 await interaction.followup.send(f"Ocorreu um erro ao importar o arquivo de configuração: {str(e)}", ephemeral=True)
             return
 
-    if tipo == 2:
-        if modo == 1 or modo == 3:
+    if tipo.value == 2:
+        if modo.value == 1 or modo.value == 3:
             arquivos_procesados_folder = dir_inicial.joinpath(arquivos_procesados)
             file = os.path.join(arquivos_procesados_folder, f"{server_id}_arquivos_processados.txt")
             try:
@@ -1834,7 +2006,7 @@ async def slash_command(interaction: discord.Interaction, tipo: int, modo: int):
             except FileNotFoundError:
                 await interaction.followup.send("O arquivo de arquivos processados não existe para este servidor.")
             return
-        if modo == 2:
+        if modo.value == 2:
             arquivos_procesados_folder = dir_inicial.joinpath(arquivos_procesados)
             file = os.path.join(arquivos_procesados_folder, f"{server_id}_arquivos_processados.txt")
             await interaction.followup.send("Por favor, envie o arquivo para importar dentro de 1 minuto.", ephemeral=True)
@@ -1888,25 +2060,305 @@ async def slash_command(interaction: discord.Interaction, tipo: int, modo: int):
             return
 
     if tipo  == 3:
-        if modo == 1:
-            await interaction.followup.send("Você não pode exportar esse arquivo.", ephemeral=True)
-            return
-        if modo == 2:
+        if modo.value == 1:
+            file_path = os.path.join(log_comandos, f'{server_id}_comandos.log')
+            if not os.path.exists(file_path):
+                await interaction.followup.send("O arquivo não existe para este servidor.", ephemeral=True)
+                return
+            try:
+                await interaction.followup.send(file=discord.File(file_path), ephemeral=True)
+                return
+            except Exception as e:
+                await interaction.followup.send(f"Ocorreu um erro ao enviar o arquivo config.json: {str(e)}", ephemeral=True)
+                return
+        if modo.value == 2:
             await interaction.followup.send("Você não pode importar nada para esse arquivo.", ephemeral=True)
             return
-        if modo == 3:
-                file_path = os.path.join(log_comandos, f'{server_id}_comandos.log')
-                print(file_path)
-                if not os.path.exists(file_path):
-                    await interaction.followup.send("O arquivo não existe para este servidor.", ephemeral=True)
-                    return
-                try:
-                    await interaction.followup.send(file=discord.File(file_path), ephemeral=True)
-                    return
-                except Exception as e:
-                    await interaction.followup.send(f"Ocorreu um erro ao enviar o arquivo config.json: {str(e)}", ephemeral=True)
-                    return
+        if modo.value == 3:
+            file_path = os.path.join(log_comandos, f'{server_id}_comandos.log')
+            if not os.path.exists(file_path):
+                await interaction.followup.send("O arquivo não existe para este servidor.", ephemeral=True)
+                return
+            try:
+                with open(file_path, 'r') as f:
+                    lines = f.readlines()
+                    for line in lines:
+                        embed = discord.Embed(description=line)
+                        await interaction.followup.send(embed=embed, ephemeral=True)
+                return
+            except Exception as e:
+                await interaction.followup.send(f"Ocorreu um erro ao enviar o arquivo config.json: {str(e)}", ephemeral=True)
+                return
 
     await interaction.followup.send("Erro. Comando digitado incorretamente.", ephemeral=True)
+
+@tree2.command(name="postar-criar-obra")
+@app_commands.autocomplete(tag1=role_autocomplete, tag2=role_autocomplete)
+async def slash_command(interaction: discord.Interaction, nome: str, link: str, tag1: str, tag2: str, imagem: str = None):
+    server_id = interaction.guild.id
+    registrar_comando(f"postar-criar", interaction.user.name, server_id)
+
+    # Verificar se o usuário tem a role "Drive" ou é um administrador
+    member = interaction.guild.get_member(interaction.user.id)
+    is_drive_role = discord.utils.get(member.roles, name='Drive') is not None
+    is_admin = member.guild_permissions.administrator
+
+    if not (is_drive_role or is_admin):
+        await interaction.response.send_message("Você não tem permissão para executar este comando.", ephemeral=True)
+        return
+
+    await interaction.response.defer(ephemeral=True, thinking=True)
+
+    try:
+        if "https://argosscan.com/obras/" not in link:
+            return await interaction.followup.send('Link inválido.\nSomente links do site da **Argos** podem serem usados.')
+    
+        config_posts = cpx01(server_id)
+    
+        if nome in config_posts:
+            return await interaction.followup.send('Já existe com esse nome')
+        
+        if imagem:
+            if not any(extensao in imagem for extensao in [".png", ".jpg", ".gif", ".apng"]):
+                return await interaction.followup.send('Link de imagem inválido.')
+                
+        config_posts[nome] = {'link': link, 'imagem': imagem, 'tag1': tag1, 'tag2': tag2}
+    
+        cpx02(config_posts, server_id)
+        
+        await interaction.followup.send('Adicionado')
+    except Exception as e:
+        traceback_str = traceback.format_exc(limit=1)
+        await interaction.followup.send(f"Ocorreu um erro:\n{traceback_str}\n{str(e)}")
+
+@tree2.command(name="postar-remover-obra")
+@app_commands.autocomplete(nome=name_autocomplete)
+async def slash_command(interaction: discord.Interaction, nome: str):
+    server_id = interaction.guild.id
+    registrar_comando(f"postar-remover", interaction.user.name, server_id)
+
+    # Verificar se o usuário tem a role "Drive" ou é um administrador
+    member = interaction.guild.get_member(interaction.user.id)
+    is_drive_role = discord.utils.get(member.roles, name='Drive') is not None
+    is_admin = member.guild_permissions.administrator
+
+    if not (is_drive_role or is_admin):
+        await interaction.response.send_message("Você não tem permissão para executar este comando.", ephemeral=True)
+        return
+
+    await interaction.response.defer(ephemeral=True, thinking=True)
+
+    config_posts = cpx01(server_id)
+
+    # Verifica se a pasta existe nas configurações
+    if nome not in config_posts:
+        await interaction.followup.send(f"Não existe", ephemeral=True)
+        return
+
+    # Remove a pasta das configurações
+    config_posts.pop(nome)
+
+    cpx02(config_posts, server_id)
+
+    file_path = dir_inicial.joinpath(server_posts, f'{nome}.json')
+    os.remove(file_path)
+
+    await interaction.followup.send(f"Removida", ephemeral=True)
+
+@tree2.command(name="postar-criar-hook")
+@app_commands.choices(externo=[app_commands.Choice(name='Sim', value='True'), app_commands.Choice(name='Não', value='None')])
+@app_commands.describe(externo='ative isso caso a webhook esteja em outro servidor')
+async def slash_command(interaction: discord.Interaction, nome: str, link: str, senha: str, externo: app_commands.Choice[str] = None):
+    server_id = interaction.guild.id
+    registrar_comando(f"postar-criar2", interaction.user.name, server_id)
+
+    # Verificar se o usuário tem a role "Drive" ou é um administrador
+    member = interaction.guild.get_member(interaction.user.id)
+    is_drive_role = discord.utils.get(member.roles, name='Drive') is not None
+    is_admin = member.guild_permissions.administrator
+
+    if not (is_drive_role or is_admin):
+        return await interaction.response.send_message("Você não tem permissão para executar este comando.", ephemeral=True)
+
+    await interaction.response.defer(ephemeral=True, thinking=True)
+
+    if externo is not None:
+        if externo.value == 'True':
+            externo = True
+        else:
+            externo = None
+
+    try:
+        config_hook = cpx03(server_id)
+        config_hook_password = cpx05(server_id)
+        
+        if "https://discord.com/api/webhooks/" not in link:
+            return await interaction.followup.send('Link inválido.')
+        
+        if externo is None:
+            pattern = r"https://discord\.com/api/webhooks/(\d+)/"
+            match = re.search(pattern, link)
+            if match:
+                webhook_id = match.group(1)
+    
+            try:
+                await client2.fetch_webhook(webhook_id)
+            except Exception:
+                return await interaction.followup.send('WebHook não existe.', ephemeral=True)
+        
+        if nome in config_hook:
+            return await interaction.followup.send('Já existe com esse nome')
+        
+        config_hook[nome] = {'link': link, 'externo': externo}
+        config_hook_password[nome] = {'password': senha}
+    
+        cpx04(config_hook, server_id)
+        cpx06(config_hook_password, server_id)
+
+        await interaction.followup.send('Adicionado')
+    except Exception as e:
+        traceback_str = traceback.format_exc(limit=1)
+        await interaction.followup.send(f"Ocorreu um erro:\n{traceback_str}\n{str(e)}")
+    
+@tree2.command(name="postar-remover-hook")
+@app_commands.autocomplete(nome=link_autocomplete)
+async def slash_command(interaction: discord.Interaction, nome: str):
+    server_id = interaction.guild.id
+    registrar_comando(f"postar-remover2", interaction.user.name, server_id)
+
+    # Verificar se o usuário tem a role "Drive" ou é um administrador
+    member = interaction.guild.get_member(interaction.user.id)
+    is_drive_role = discord.utils.get(member.roles, name='Drive') is not None
+    is_admin = member.guild_permissions.administrator
+
+    if not (is_drive_role or is_admin):
+        return await interaction.response.send_message("Você não tem permissão para executar este comando.", ephemeral=True)
+
+    await interaction.response.defer(ephemeral=True, thinking=True)
+
+    config_posts = cpx03(server_id)
+    config_hook_password = cpx05(server_id)
+
+    # Verifica se a pasta existe nas configurações
+    if nome not in config_posts:
+        return await interaction.followup.send(f"Não existe", ephemeral=True)
+
+    # Remove a pasta das configurações
+    config_posts.pop(nome)
+    config_hook_password.pop(nome)
+
+    cpx04(config_posts, server_id)
+    cpx06(config_hook_password, server_id)
+
+    await interaction.followup.send(f"Removida", ephemeral=True)
+
+@tree2.command(name="postar")
+@app_commands.autocomplete(obra=name_autocomplete, hook=link_autocomplete)
+@app_commands.describe(proximo='coloque um número de 1 à 90 ')
+async def slash_command(interaction: discord.Interaction, obra: str, hook: str, senha: str,capitulo: str, volume: int = None, proximo: int = None):
+    server_id = interaction.guild.id
+    registrar_comando(f"postar", interaction.user.name, server_id)
+
+    # Verificar se o usuário tem a role "Drive" ou é um administrador
+    member = interaction.guild.get_member(interaction.user.id)
+    is_drive_role = discord.utils.get(member.roles, name='Drive') is not None
+    is_admin = member.guild_permissions.administrator
+
+    if not (is_drive_role or is_admin):
+        return await interaction.response.send_message("Você não tem permissão para executar este comando.", ephemeral=True)
+
+    await interaction.response.defer(ephemeral=True, thinking=True)
+
+    try:
+        config_posts1 = cpx01(server_id)
+        config_posts2 = cpx03(server_id)
+        config_posts3 = cpx05(server_id)
+        config_obra = config_posts1.get(obra)
+        config_hook = config_posts2.get(hook)
+        config_hook_password = config_posts3.get(hook)
+
+        link_obra = config_obra.get('link')
+        link_imagem = config_obra.get('imagem')
+        tag1 = config_obra.get('tag1')
+        tag2 = config_obra.get('tag2')
+        link_hook = config_hook.get('link')
+        externo_hook = config_hook.get('externo')
+        password_hook = config_hook_password.get('password')
+
+        # Verificar se a mensagem já foi enviada anteriormente
+        mensagem_anterior = None
+        file_path = dir_inicial.joinpath(server_posts, 'mensagens_enviadas.json')
+        if os.path.exists(file_path):
+            with open(file_path, "r") as file:
+                mensagens_enviadas = json.load(file)
+        else:
+            mensagens_enviadas = {}
+        
+        webhook_info = mensagens_enviadas.get(hook, {})
+        obra_info = webhook_info.get(obra, {})
+        capitulo_key = f"capitulo-{capitulo}"
+        if capitulo_key in obra_info:
+            return await interaction.followup.send('Essa mensagem já foi enviada anteriormente.', ephemeral=True)
+
+        externo_hook = replace_null_with_none(externo_hook)
+
+        if "https://discord.com/api/webhooks/" not in link_hook:
+            return await interaction.followup.send('Link inválido.')
+        
+        if externo_hook is None:
+            pattern = r"https://discord\.com/api/webhooks/(\d+)/"
+            match = re.search(pattern, link_hook)
+            if match:
+                webhook_id = match.group(1)
+    
+            try:
+                await client2.fetch_webhook(webhook_id)
+            except Exception:
+                return await interaction.followup.send('WebHook não existe.', ephemeral=True)
+        
+        if f"{password_hook}" != f"{senha}":
+            return await interaction.followup.send('Senha incorreta', ephemeral=True)
+
+        if proximo is not None:
+            if proximo > 90:
+                return await interaction.followup.send("Número maior que 90")
+            data_hoje = datetime.datetime.now()
+            data_resultante = data_hoje + datetime.timedelta(days=proximo)
+
+        nome, link, icon_url = selenium(link_obra, capitulo)
+
+        if nome is False:
+            return await interaction.followup.send(f"Nenhum capítulo com esse número foi encontrado", ephemeral=True)
+            
+        if link_imagem:
+            icon_url = link_imagem
+        
+        embed = discord.Embed(title=obra, color=4243790, url=link_obra)
+        embed.set_image(url=icon_url)
+        embed.set_footer(text="Argos Scan", icon_url="https://i.postimg.cc/YqCL5ZhB/Sem-T-tulo-1.png")
+        embed.timestamp = datetime.datetime.now()
+        embed.add_field(name="Capítulo:", value=f"[**{nome}**]({link})", inline=True)
+        if volume is not None:
+            message = f"**"+str(volume)+"**"
+            embed.add_field(name="Volume:", value=message, inline=True)
+        if proximo is not None:
+            message = f"**{data_resultante.strftime('%d/%m/%Y')}**"
+            embed.add_field(name="Próximo capítulo dia:", value=message, inline=False)
+        async with aiohttp.ClientSession() as session:
+            webhook = Webhook.from_url(url=link_hook, session=session)
+            await webhook.send(f"<@&{tag1}>\n<@&{tag2}>", embed=embed)
+        await interaction.followup.send('enviado', ephemeral=True)
+
+        # Salvar as informações da mensagem enviada no arquivo JSON
+        obra_info[capitulo_key] = capitulo
+        webhook_info[obra] = obra_info
+        mensagens_enviadas[hook] = webhook_info
+
+        with open(file_path, "w") as file:
+            json.dump(mensagens_enviadas, file, indent=4)
+
+    except Exception as e:
+        traceback_str = traceback.format_exc(limit=1)
+        return await interaction.followup.send(f"Ocorreu um erro:\n{traceback_str}\n{str(e)}", ephemeral=True)
 
 loop.run_forever()
